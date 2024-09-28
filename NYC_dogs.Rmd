@@ -1,0 +1,172 @@
+---
+title: " "
+author: "Solomon Eshun"
+date: "2024-09-28"
+output: html_document
+---
+
+
+## Question 1
+
+```{r}
+
+suppressMessages(library(tidyverse))
+
+setwd('~/Documents/NYC_Dog-HW')
+
+data <- read_csv("NYC_Dog.csv", show_col_types = F)
+
+pr <- problems(data) %>% pull(row)
+
+print(problems(data))
+
+problematic_data  <- data %>% filter(row_number() %in% pr)
+print(problematic_data)
+
+# Renaming columns
+data <- data %>%
+  rename(
+    name = AnimalName,
+    gender = AnimalGender,
+    birth_year = AnimalBirthYear,
+    breed = BreedName,
+    zipcode = ZipCode,
+    issue_date = LicenseIssuedDate,
+    expiration_date = LicenseExpiredDate,
+    extract_year = `Extract Year`
+  )
+
+# Reducing the data to complete cases
+
+unwanted_names <- c(".", "A", "UNKNOWN", "NAME NOT PROVIDED", "NONE", "NAME")
+cc_data <- data %>% filter(complete.cases(.) & !name %in% unwanted_names)
+
+cat(sprintf("\n\nRows before removing incomplete cases: %d\n", nrow(data)))
+cat(sprintf("Rows after removing incomplete cases: %d\nCases Removed: %d\n\n",
+            nrow(cc_data), nrow(data)-nrow(cc_data)))
+
+```
+
+
+# Question 2
+
+
+```{r}
+
+
+# Compare the number of distinct rows to the total rows
+total_rows <- nrow(cc_data)
+distinct_rows <- cc_data %>% distinct() %>% nrow()
+
+cat(sprintf("Total number of rows: %d\nNumber of distinct rows: %d\n", 
+            total_rows, distinct_rows))
+
+# Find the non-distinct (duplicate) rows
+duplicate_rows <- cc_data %>% add_count(across(everything())) %>%  
+  filter(n > 1) %>% arrange(desc(n))            
+
+print(duplicate_rows)
+
+
+
+```
+
+
+In the dataset, we observed a total of `r total_rows - nrow(distinct_rows)` duplicate rows. These duplicate entries were identified by matching values across all columns, meaning they are exact duplicates throughout the dataset. A total of `r nrow(duplicate_rows)` rows were involved in duplication, which includes both original and duplicate entries. Possible causes for this duplication include repetitive license registrations, where the same dog’s information is submitted multiple times, such as during annual renewals with unchanged data. Additionally, data entry errors could have contributed, where identical records were mistakenly entered multiple times during data collection or processing.
+
+
+
+## Question 3
+
+```{r}
+
+ggplot(cc_data, aes(x = birth_year)) + geom_bar() + 
+  labs(title = "Number of Dogs Born by Year", x = "Year of Birth",
+       y = "Number of Dogs") + theme_classic()+
+  theme(axis.title.y = element_text(margin = margin(r = 10)))
+
+# Restrict to years with 50 or more dogs
+birth_year_counts <- cc_data %>%
+  group_by(birth_year) %>%
+  summarise(count = n())
+
+non_trivial_years <- birth_year_counts %>% filter(count >= 50)
+
+ggplot(non_trivial_years, aes(x = birth_year, y = count)) +
+  geom_bar(stat = "identity", fill="blue") +
+  labs(title = sprintf("Number of Dogs Born by Year (Years with ≥ %d Dogs)",50),
+       x = "Year of Birth", y = "Number of Dogs") + theme_classic()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title.x = element_text(margin = margin(t = 10)),
+        axis.title.y = element_text(margin = margin(r = 10))) +
+  scale_x_continuous(breaks = non_trivial_years$birth_year)
+
+
+
+```
+
+
+## Question 4
+
+```{r}
+
+# unique dogs based on name, gender, birth year, breed, and zip code
+unique_dogs <- cc_data %>%
+  distinct(name, gender, birth_year, breed, zipcode, .keep_all = T)
+
+cat(sprintf("Rows count (before assumption): %d", nrow(cc_data)))
+cat(sprintf("\nRows count (after assumption): %d\nRows removed: %d\n\n",
+            nrow(unique_dogs), nrow(cc_data) - nrow(unique_dogs)))
+
+```
+
+## Question 5
+
+```{r}
+
+dogs_per_year <- unique_dogs %>% group_by(birth_year) %>%
+  summarise(total_dogs = n(), .groups = 'drop')
+
+# Total number of dogs with a given name in each year
+dogs_per_name_year <- unique_dogs %>% group_by(birth_year, name) %>%
+  summarise(name_count = n(), .groups = 'drop')
+
+joined_data <- dogs_per_name_year %>% 
+  left_join(dogs_per_year, by = "birth_year") %>%
+  mutate(rate = name_count / total_dogs)
+
+# Most popular dog name in 1999 and 2023
+most_popular_1999 <- joined_data %>% filter(birth_year == 1999) %>%
+  arrange(desc(rate)) %>% slice(1) %>% pull(name)
+
+most_popular_2023 <- joined_data %>% filter(birth_year == 2023) %>%
+  arrange(desc(rate)) %>% slice(1) %>% pull(name)
+
+
+cat(sprintf("Most popular dog name in 1999: %s", most_popular_1999))
+cat(sprintf("\nMost popular dog name in 2023: %s\n\n", most_popular_2023))
+
+
+```
+
+
+
+```{r}
+
+joined_data %>%
+  filter(name %in% c(most_popular_1999, most_popular_2023)) %>%
+  mutate(name_year = case_when(
+    name == most_popular_1999 ~ paste(most_popular_1999, "(1999)"),
+    name == most_popular_2023 ~ paste(most_popular_2023, "(2023)")
+  )) %>%
+  ggplot(aes(x = birth_year, y = rate, color = name_year)) +
+  geom_line(lwd=1) +
+  labs(title = "Rate of Most Popular Dog Names in 1999 and 2023 Over Time",
+       x = "Year", y = "Rate", color = "Dog Name (Year)") + theme_classic()
+
+```
+
+
+
+
+
